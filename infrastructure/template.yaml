@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Service Agent (SA) - multi-agent AI service worker backend
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 1024
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        AWS_REGION: !Ref AWSRegion
+        USERS_TABLE: !Ref UsersTable
+        APPLICATIONS_TABLE: !Ref ApplicationsTable
+        EXTRACTED_DOCS_TABLE: !Ref ExtractedDocumentsTable
+        AGENT_LOGS_TABLE: !Ref AgentLogsTable
+        DOCUMENTS_BUCKET: !Ref DocumentsBucket
+        COGNITO_USER_POOL_ID: !Ref UserPool
+        COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
+        NOVA_SONIC_MODEL_ID: !Ref NovaSonicModelId
+        NOVA_MULTIMODAL_MODEL_ID: !Ref NovaMultimodalModelId
+        NOVA_LITE_MODEL_ID: !Ref NovaLiteModelId
+        NOVA_ACT_MODEL_ID: !Ref NovaActModelId
+        NOTIFICATION_SENDER_EMAIL: !Ref NotificationSenderEmail
+
+Parameters:
+  AWSRegion:
+    Type: String
+    Default: us-east-1
+  NovaSonicModelId:
+    Type: String
+    Default: amazon.nova-sonic-v1:0
+  NovaMultimodalModelId:
+    Type: String
+    Default: amazon.nova-pro-v1:0
+  NovaLiteModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+  NovaActModelId:
+    Type: String
+    Default: amazon.nova-act-v1:0
+  NotificationSenderEmail:
+    Type: String
+    Default: ""
+
+Resources:
+  ServiceAgentHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "authorization"
+          - "content-type"
+          - "x-user-sub"
+        AllowMethods:
+          - "GET"
+          - "POST"
+          - "OPTIONS"
+
+  ServiceAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: backend.src.api.lambda_app.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UsersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApplicationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExtractedDocumentsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgentLogsTable
+        - S3CrudPolicy:
+            BucketName: !Ref DocumentsBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:Converse
+                - bedrock:ConverseStream
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
+      Events:
+        ProxyApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ServiceAgentHttpApi
+            Path: /{proxy+}
+            Method: ANY
+
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+
+  ApplicationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: application_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: application_id
+          KeyType: HASH
+
+  ExtractedDocumentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: document_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: document_id
+          KeyType: HASH
+
+  AgentLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: log_id
+          AttributeType: S
+        - AttributeName: application_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: log_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: application_id-created_at-index
+          KeySchema:
+            - AttributeName: application_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: serviceagent-user-pool
+      AutoVerifiedAttributes:
+        - email
+      UsernameAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: serviceagent-web-client
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+
+Outputs:
+  ApiBaseUrl:
+    Description: Service Agent API base URL
+    Value: !Sub "https://${ServiceAgentHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  DocumentsBucketName:
+    Value: !Ref DocumentsBucket
