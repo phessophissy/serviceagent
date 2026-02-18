@@ -1,25 +1,32 @@
+import asyncio
+import base64
+import json
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from mangum import Mangum
 
 from backend.src.models import (
+    ApplicationTimelineResponse,
     ApplicationRecord,
     AutomationRunResponse,
     CreateApplicationRequest,
     CreateApplicationResponse,
     InterviewTurnRequest,
     InterviewTurnResponse,
+    PlannerStateResponse,
     ProcessDocumentRequest,
     ProcessDocumentResponse,
     RequestUploadUrlRequest,
     RequestUploadUrlResponse,
     ValidateApplicationResponse,
 )
-from backend.src.services.orchestrator import ServiceAgentOrchestrator
+from backend.orchestrator import ServiceAgentOrchestrator
+from backend.src.services.sonic_streaming_service import NovaSonicStreamingService
 
 app = FastAPI(title="Service Agent API", version="0.1.0")
 orchestrator = ServiceAgentOrchestrator()
+sonic_service = NovaSonicStreamingService()
 
 
 def get_user_sub(x_user_sub: Annotated[str | None, Header()] = None) -> str:
@@ -34,7 +41,13 @@ def health() -> dict[str, str]:
 
 @app.post("/applications", response_model=CreateApplicationResponse)
 def create_application(request: CreateApplicationRequest, user_sub: str = Depends(get_user_sub)) -> CreateApplicationResponse:
-    created = orchestrator.create_application(user_sub, request.application_type, request.prompt)
+    created = orchestrator.create_application(
+        user_sub,
+        request.application_type,
+        request.prompt,
+        request.demo_mode,
+        request.demo_scenario,
+    )
     return CreateApplicationResponse(
         application_id=created["application_id"],
         status=created["status"],
@@ -164,6 +177,132 @@ def get_logs(application_id: str, user_sub: str = Depends(get_user_sub)) -> dict
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     return {"logs": logs}
+
+
+@app.get("/applications/{application_id}/timeline", response_model=ApplicationTimelineResponse)
+def get_timeline(application_id: str, user_sub: str = Depends(get_user_sub)) -> ApplicationTimelineResponse:
+    try:
+        timeline = orchestrator.get_timeline(application_id, user_sub)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return ApplicationTimelineResponse(**timeline)
+
+
+@app.get("/planner/state/{application_id}", response_model=PlannerStateResponse)
+def get_planner_state(application_id: str, user_sub: str = Depends(get_user_sub)) -> PlannerStateResponse:
+    try:
+        state = orchestrator.get_planner_state(application_id, user_sub)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return PlannerStateResponse(**state)
+
+
+@app.websocket("/ws/interview/{application_id}")
+async def interview_stream(websocket: WebSocket, application_id: str) -> None:
+    await websocket.accept()
+    user_sub = websocket.query_params.get("x_user_sub", "demo-user")
+
+    buffered_chunks: list[bytes] = []
+    mime_type = "audio/webm"
+
+    async def process_buffer() -> None:
+        if not buffered_chunks:
+            return
+
+        audio_payload = b"".join(buffered_chunks)
+        buffered_chunks.clear()
+
+        try:
+            app_state = orchestrator.get_application(application_id, user_sub)
+        except (KeyError, PermissionError):
+            await websocket.send_json({"type": "error", "message": "Application access denied"})
+            return
+
+        voice_response = await asyncio.to_thread(
+            sonic_service.stream_turn,
+            audio_bytes=audio_payload,
+            mime_type=mime_type,
+            conversation_state={
+                "profile": app_state.get("profile", {}),
+                "missing_requirements": app_state.get("missing_requirements", []),
+                "clarification_questions": app_state.get("clarification_questions", []),
+            },
+        )
+
+        transcript = str(voice_response.get("user_transcript", "")).strip()
+        updated = app_state
+        if transcript:
+            try:
+                updated = await asyncio.to_thread(
+                    orchestrator.run_interview_turn,
+                    application_id,
+                    user_sub,
+                    transcript,
+                    transcript,
+                )
+            except (KeyError, PermissionError):
+                await websocket.send_json({"type": "error", "message": "Failed to process interview turn"})
+                return
+
+        planner_state = await asyncio.to_thread(orchestrator.get_planner_state, application_id, user_sub)
+        payload = {
+            "type": "assistant_response",
+            "assistant_text": voice_response.get("assistant_text", ""),
+            "assistant_audio_b64": voice_response.get("assistant_audio_b64", ""),
+            "assistant_audio_mime_type": "audio/wav",
+            "user_transcript": transcript,
+            "status": updated.get("status", "in_progress"),
+            "next_questions": updated.get("clarification_questions", []),
+            "missing_requirements": planner_state.get("missing_requirements", []),
+            "goal": planner_state.get("goal", ""),
+            "next_action": planner_state.get("next_action", ""),
+            "reasoning_summary": planner_state.get("reasoning_summary", ""),
+        }
+        await websocket.send_json(payload)
+
+    try:
+        await websocket.send_json({"type": "ready", "message": "Voice interview session started"})
+        while True:
+            raw_message = await websocket.receive_text()
+            event = json.loads(raw_message)
+            event_type = event.get("type")
+
+            if event_type == "start":
+                mime_type = str(event.get("mime_type", "audio/webm"))
+                await websocket.send_json({"type": "ack", "message": "stream_started"})
+                continue
+
+            if event_type == "audio_chunk":
+                mime_type = str(event.get("mime_type", mime_type))
+                audio_b64 = str(event.get("audio_b64", ""))
+                if audio_b64:
+                    try:
+                        buffered_chunks.append(base64.b64decode(audio_b64))
+                    except Exception:
+                        await websocket.send_json({"type": "error", "message": "Invalid audio chunk encoding"})
+                        continue
+                if len(buffered_chunks) >= 4:
+                    await process_buffer()
+                continue
+
+            if event_type == "stop":
+                await process_buffer()
+                await websocket.send_json({"type": "session_stopped"})
+                break
+
+            if event_type == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
+
+            await websocket.send_json({"type": "error", "message": f"Unsupported event type: {event_type}"})
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        await websocket.send_json({"type": "error", "message": str(exc)})
 
 
 handler = Mangum(app)

@@ -10,6 +10,7 @@ class Settings:
     extracted_docs_table: str = os.getenv("EXTRACTED_DOCS_TABLE", "ServiceAgentExtractedDocuments")
     agent_logs_table: str = os.getenv("AGENT_LOGS_TABLE", "ServiceAgentAgentLogs")
     documents_bucket: str = os.getenv("DOCUMENTS_BUCKET", "")
+    artifacts_bucket: str = os.getenv("ARTIFACTS_BUCKET", "service-agent-demo-artifacts")
 
     # Bedrock model identifiers are configurable because accounts/regions vary.
     nova_sonic_model_id: str = os.getenv("NOVA_SONIC_MODEL_ID", "amazon.nova-sonic-v1:0")

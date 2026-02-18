@@ -13,10 +13,13 @@ const APPLICATION_TYPES = [
   { value: "job_application", label: "Job" },
 ];
 
+const DEMO_SCENARIO = "international_scholarship_application";
+
 export default function HomePage() {
   const router = useRouter();
   const [prompt, setPrompt] = useState("I want to apply for a scholarship.");
   const [applicationType, setApplicationType] = useState("scholarship_application");
+  const [demoMode, setDemoMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,7 +27,10 @@ export default function HomePage() {
     setBusy(true);
     setError("");
     try {
-      const created = await createApplication(prompt, applicationType);
+      const created = await createApplication(prompt, applicationType, {
+        demoMode,
+        demoScenario: demoMode ? DEMO_SCENARIO : null,
+      });
       router.push(`/applications/${created.application_id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to create application";
@@ -66,6 +72,28 @@ export default function HomePage() {
             onChange={(e) => setPrompt(e.target.value)}
             className="w-full rounded-lg border border-slate-300 p-2"
           />
+        </label>
+
+        <label className="md:col-span-2 flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <input
+            type="checkbox"
+            checked={demoMode}
+            onChange={(e) => {
+              const enabled = e.target.checked;
+              setDemoMode(enabled);
+              if (enabled) {
+                setApplicationType("scholarship_application");
+                setPrompt("I want to run the international scholarship demo application.");
+              }
+            }}
+            className="mt-1 h-4 w-4 rounded border-slate-300"
+          />
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Demo Narrative Mode: International Scholarship Application</p>
+            <p className="text-xs text-slate-600">
+              Uses predefined planning knowledge, required documents, and demo-target automation flow for hackathon reliability.
+            </p>
+          </div>
         </label>
 
         <div className="md:col-span-2">

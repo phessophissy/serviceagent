@@ -23,6 +23,7 @@ Set the Bedrock Nova model IDs that exist in your account/region.
 python -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
+playwright install chromium
 PYTHONPATH=. python -m backend.src.main
 ```
 
@@ -37,7 +38,8 @@ npm run dev
 ## 5. Demo Sequence
 
 1. Start a new scholarship application from the homepage.
-2. Use voice intake to capture the request.
-3. Upload a document from the application page.
-4. Trigger validation and automation endpoints from API client / UI extensions.
-5. Observe logs in dashboard timeline.
+2. Enable `Demo Narrative Mode: International Scholarship Application`.
+3. Start `Live Voice Interview` on the application detail page (WebSocket route: `/ws/interview/{application_id}`).
+4. Upload required documents shown in the missing requirements panel.
+5. Let planner advance to automation and observe screenshots in the timeline.
+6. Review planner reasoning and task progression in the `AI Thinking Panel`.

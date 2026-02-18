@@ -1,6 +1,7 @@
 import uuid
 from typing import Any
 
+from automation.browser_controller import BrowserController
 from backend.src.logger import get_logger
 from backend.src.services.bedrock_client import BedrockClient
 
@@ -8,8 +9,9 @@ logger = get_logger(__name__)
 
 
 class NovaActController:
-    def __init__(self, bedrock: BedrockClient) -> None:
+    def __init__(self, bedrock: BedrockClient, browser_controller: BrowserController) -> None:
         self.bedrock = bedrock
+        self.browser_controller = browser_controller
 
     def execute(
         self,
@@ -20,10 +22,7 @@ class NovaActController:
         documents: list[dict[str, Any]],
         plan: dict[str, Any],
     ) -> dict[str, Any]:
-        """Prototype automation executor.
-
-        The live implementation should attach to Nova Act browser sessions.
-        """
+        """Execute real browser steps with screenshot artifacts."""
         logger.info("Starting automation for %s at %s", application_id, target_url)
 
         planned_steps = plan.get("steps") if isinstance(plan, dict) else None
@@ -36,17 +35,15 @@ class NovaActController:
                 "Review and submit",
             ]
 
-        # Simulated deterministic execution trace for demo reliability.
-        executed_steps = [f"{idx + 1}. {step}" for idx, step in enumerate(planned_steps)]
-        submission_reference = f"SA-{application_id[:8]}-{uuid.uuid4().hex[:6]}"
+        result = self.browser_controller.run(
+            application_id=application_id,
+            target_url=target_url,
+            profile=profile,
+            documents=documents,
+            planned_steps=[str(step) for step in planned_steps],
+        )
 
-        return {
-            "success": True,
-            "steps": executed_steps,
-            "submission_reference": submission_reference,
-            "artifacts": {
-                "target_url": target_url,
-                "submitted_fields_count": len(profile),
-                "uploaded_documents_count": len(documents),
-            },
-        }
+        if not result.get("submission_reference") and result.get("success"):
+            result["submission_reference"] = f"SA-{application_id[:8]}-{uuid.uuid4().hex[:6]}"
+
+        return result

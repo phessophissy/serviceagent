@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+import AIThinkingPanel from "@/components/AIThinkingPanel";
+import AutomationTimeline from "@/components/AutomationTimeline";
 import ApplicationStatusTimeline from "@/components/ApplicationStatusTimeline";
 import DocumentUploader from "@/components/DocumentUploader";
-import { getApplication, getApplicationLogs } from "@/lib/api";
+import StreamingVoicePanel from "@/components/StreamingVoicePanel";
+import { getApplication, getApplicationLogs, getApplicationTimeline, getPlannerState } from "@/lib/api";
 
 export default function ApplicationDetailPage() {
   const params = useParams<{ applicationId: string }>();
@@ -13,23 +16,31 @@ export default function ApplicationDetailPage() {
 
   const [application, setApplication] = useState<Record<string, unknown> | null>(null);
   const [logs, setLogs] = useState<Array<Record<string, unknown>>>([]);
+  const [timeline, setTimeline] = useState<Array<Record<string, unknown>>>([]);
+  const [plannerState, setPlannerState] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const [app, logPayload] = await Promise.all([
-          getApplication(applicationId),
-          getApplicationLogs(applicationId),
-        ]);
-        setApplication(app as Record<string, unknown>);
-        setLogs(logPayload.logs);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load application");
-      }
-    };
+  const refresh = async () => {
+    try {
+      const [app, logPayload, timelinePayload, plannerPayload] = await Promise.all([
+        getApplication(applicationId),
+        getApplicationLogs(applicationId),
+        getApplicationTimeline(applicationId),
+        getPlannerState(applicationId),
+      ]);
+      setApplication(app as Record<string, unknown>);
+      setLogs(logPayload.logs);
+      setTimeline(timelinePayload.timeline);
+      setPlannerState(plannerPayload as Record<string, unknown>);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load application");
+    }
+  };
 
-    void load();
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicationId]);
 
   if (error) {
@@ -46,8 +57,33 @@ export default function ApplicationDetailPage() {
         </pre>
       </section>
 
-      <DocumentUploader applicationId={applicationId} />
+      <AIThinkingPanel
+        goal={String(plannerState?.goal || "")}
+        reasoningSummary={String(plannerState?.reasoning_summary || "")}
+        nextAction={String(plannerState?.next_action || "")}
+        missingRequirements={Array.isArray(plannerState?.missing_requirements) ? (plannerState?.missing_requirements as string[]) : []}
+        tasks={Array.isArray(plannerState?.tasks) ? (plannerState?.tasks as Array<{ step?: number; action?: string; status?: string }>) : []}
+      />
+
+      <StreamingVoicePanel applicationId={applicationId} onVoiceUpdate={() => void refresh()} />
+      <DocumentUploader
+        applicationId={applicationId}
+        missingRequirements={Array.isArray(plannerState?.missing_requirements) ? (plannerState?.missing_requirements as string[]) : []}
+        onUploaded={refresh}
+      />
       <ApplicationStatusTimeline logs={logs as Array<{ created_at?: string; agent_name?: string; message?: string }>} />
+      <AutomationTimeline
+        timeline={
+          timeline as Array<{
+            step?: number;
+            action?: string;
+            status?: string;
+            timestamp?: string;
+            screenshot_url?: string;
+            error?: string;
+          }>
+        }
+      />
     </div>
   );
 }

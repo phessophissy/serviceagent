@@ -60,8 +60,10 @@ class AutomationAgent(Agent):
         return {
             "success": automation_result["success"],
             "steps": automation_result["steps"],
+            "timeline": automation_result.get("timeline", []),
             "submission_reference": automation_result.get("submission_reference"),
             "artifacts": automation_result.get("artifacts", {}),
+            "error": automation_result.get("error"),
             "plan": plan,
         }
 

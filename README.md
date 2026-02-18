@@ -27,24 +27,37 @@ serviceagent/
 
 ## Multi-Agent Design
 
-1. Interview Agent
+1. Planner Agent
+- Uses Nova Lite via Bedrock
+- Builds and updates a dynamic task plan, chooses next agent action, and tracks missing requirements
+
+2. Interview Agent
 - Uses Nova Sonic via Bedrock
 - Conducts conversational intake and outputs structured profile JSON
 
-2. Document Agent
+3. Document Agent
 - Uses Nova multimodal model via Bedrock
 - Extracts fields from uploaded documents
 
-3. Validation Agent
+4. Validation Agent
 - Uses Nova Lite
 - Detects missing/conflicting information and asks clarification questions
 
-4. Automation Agent
+5. Automation Agent
 - Uses Nova Act planning + automation controller
 - Executes website form completion flow
 
-5. Notification Agent
+6. Notification Agent
 - Sends status updates and logs progress
+
+## Demo Narrative Mode
+
+Service Agent includes a preconfigured demo scenario:
+
+- `international_scholarship_application`
+- Preloaded planning knowledge base
+- Demo automation target URL for reliable submission walkthrough
+- Dynamic missing requirements workflow (`passport`, `academic_transcript`)
 
 ## Backend API (Core Endpoints)
 
@@ -56,6 +69,9 @@ serviceagent/
 - `POST /applications/{application_id}/automate`
 - `GET /applications/{application_id}`
 - `GET /applications/{application_id}/logs`
+- `GET /applications/{application_id}/timeline`
+- `GET /planner/state/{application_id}`
+- `WS /ws/interview/{application_id}`
 
 ## Data Model
 

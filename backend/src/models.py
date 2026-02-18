@@ -18,6 +18,10 @@ class ApplicationType(str, Enum):
     VISA_APPLICATION = "visa_application"
 
 
+class DemoScenario(str, Enum):
+    INTERNATIONAL_SCHOLARSHIP_APPLICATION = "international_scholarship_application"
+
+
 class ApplicationStatus(str, Enum):
     DRAFT = "draft"
     IN_PROGRESS = "in_progress"
@@ -30,6 +34,8 @@ class ApplicationStatus(str, Enum):
 class CreateApplicationRequest(BaseModel):
     application_type: ApplicationType
     prompt: str = Field(min_length=3, max_length=1000)
+    demo_mode: bool = False
+    demo_scenario: DemoScenario | None = None
 
 
 class CreateApplicationResponse(BaseModel):
@@ -83,6 +89,32 @@ class AutomationRunResponse(BaseModel):
     automation_steps: list[str]
 
 
+class PlannerStateResponse(BaseModel):
+    application_id: str
+    goal: str
+    reasoning_summary: str
+    next_action: str
+    tasks: list[dict[str, Any]]
+    missing_requirements: list[str]
+    status: ApplicationStatus
+    updated_at: str
+
+
+class TimelineEntry(BaseModel):
+    step: int
+    action: str
+    status: str
+    timestamp: str
+    screenshot_s3_key: str | None = None
+    screenshot_url: str | None = None
+    error: str | None = None
+
+
+class ApplicationTimelineResponse(BaseModel):
+    application_id: str
+    timeline: list[TimelineEntry]
+
+
 class ApplicationRecord(BaseModel):
     application_id: str
     user_id: str
@@ -90,12 +122,23 @@ class ApplicationRecord(BaseModel):
     status: ApplicationStatus
     profile: dict[str, Any] = Field(default_factory=dict)
     interview_history: list[dict[str, Any]] = Field(default_factory=list)
+    missing_requirements: list[str] = Field(default_factory=list)
     missing_fields: list[str] = Field(default_factory=list)
     conflicts: list[str] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)
     documents: list[dict[str, Any]] = Field(default_factory=list)
     automation_steps: list[str] = Field(default_factory=list)
+    automation_timeline: list[dict[str, Any]] = Field(default_factory=list)
     submission_reference: str | None = None
+    planner_goal: str = ""
+    planner_reasoning: str = ""
+    planner_next_action: str = ""
+    planner_tasks: list[dict[str, Any]] = Field(default_factory=list)
+    last_agent_outputs: dict[str, Any] = Field(default_factory=dict)
+    demo_mode: bool = False
+    demo_scenario: DemoScenario | None = None
+    demo_context: dict[str, Any] = Field(default_factory=dict)
+    target_url: str | None = None
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
 

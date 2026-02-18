@@ -17,6 +17,7 @@ Globals:
         EXTRACTED_DOCS_TABLE: !Ref ExtractedDocumentsTable
         AGENT_LOGS_TABLE: !Ref AgentLogsTable
         DOCUMENTS_BUCKET: !Ref DocumentsBucket
+        ARTIFACTS_BUCKET: !Ref ArtifactsBucketName
         COGNITO_USER_POOL_ID: !Ref UserPool
         COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
         NOVA_SONIC_MODEL_ID: !Ref NovaSonicModelId
@@ -44,6 +45,9 @@ Parameters:
   NotificationSenderEmail:
     Type: String
     Default: ""
+  ArtifactsBucketName:
+    Type: String
+    Default: service-agent-demo-artifacts
 
 Resources:
   ServiceAgentHttpApi:
@@ -78,6 +82,8 @@ Resources:
             TableName: !Ref AgentLogsTable
         - S3CrudPolicy:
             BucketName: !Ref DocumentsBucket
+        - S3CrudPolicy:
+            BucketName: !Ref ArtifactsBucketName
         - Statement:
             - Effect: Allow
               Action:

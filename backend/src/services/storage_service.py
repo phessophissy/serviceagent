@@ -1,5 +1,7 @@
 import json
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import boto3
 
@@ -37,9 +39,25 @@ class StorageService:
             ContentType="application/json",
         )
 
-    def generate_download_url(self, s3_key: str) -> str:
+    def upload_artifact_bytes(self, *, key: str, body: bytes, content_type: str = "image/png") -> str:
+        self.s3.put_object(
+            Bucket=settings.artifacts_bucket,
+            Key=key,
+            Body=body,
+            ContentType=content_type,
+        )
+        return key
+
+    def generate_download_url(self, s3_key: str, bucket: str | None = None) -> str:
         return self.s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket, "Key": s3_key},
+            Params={"Bucket": bucket or self.bucket, "Key": s3_key},
             ExpiresIn=900,
         )
+
+    def download_document_to_tempfile(self, s3_key: str, suffix: str = ".bin") -> str:
+        response = self.s3.get_object(Bucket=self.bucket, Key=s3_key)
+        body = response["Body"].read()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            tmp_file.write(body)
+            return str(Path(tmp_file.name))
