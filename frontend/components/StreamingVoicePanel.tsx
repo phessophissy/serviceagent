@@ -34,32 +34,13 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
-function playAssistantAudio(audioB64: string, mimeType: string, fallbackText: string): void {
-  if (audioB64) {
-    const binaryString = atob(audioB64);
-    const len = binaryString.length;
-    const bytes = new Uint8Array(len);
-    for (let i = 0; i < len; i += 1) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: mimeType || "audio/wav" });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    void audio.play().finally(() => URL.revokeObjectURL(url));
-    return;
-  }
-
-  if (fallbackText && "speechSynthesis" in window) {
-    const utterance = new SpeechSynthesisUtterance(fallbackText);
-    window.speechSynthesis.speak(utterance);
-  }
-}
-
 export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Props) {
   const [connected, setConnected] = useState(false);
   const [recording, setRecording] = useState(false);
   const [status, setStatus] = useState("Voice session idle");
   const [messages, setMessages] = useState<string[]>([]);
+  const [processing, setProcessing] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
@@ -89,6 +70,40 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
     setStatus("Voice session stopped");
   }, []);
 
+  const playAssistantAudio = useCallback(
+    (audioB64: string, mimeType: string, fallbackText: string) => {
+      if (audioB64) {
+        const binaryString = atob(audioB64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i += 1) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: mimeType || "audio/wav" });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        setSpeaking(true);
+        audio.onended = () => {
+          setSpeaking(false);
+          URL.revokeObjectURL(url);
+        };
+        void audio.play().catch(() => {
+          setSpeaking(false);
+          URL.revokeObjectURL(url);
+        });
+        return;
+      }
+
+      if (fallbackText && "speechSynthesis" in window) {
+        const utterance = new SpeechSynthesisUtterance(fallbackText);
+        setSpeaking(true);
+        utterance.onend = () => setSpeaking(false);
+        window.speechSynthesis.speak(utterance);
+      }
+    },
+    [setSpeaking],
+  );
+
   const startSession = useCallback(async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -99,7 +114,7 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
 
       ws.onopen = () => {
         setConnected(true);
-        setStatus("Connected. Streaming voice...");
+        setStatus("Listening...");
       };
 
       ws.onmessage = (event) => {
@@ -110,6 +125,7 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
             const assistantText = payload.assistant_text ? `SA: ${payload.assistant_text}` : "";
             setMessages((prev) => [...prev, userText, assistantText].filter(Boolean));
 
+            setProcessing(false);
             playAssistantAudio(
               String(payload.assistant_audio_b64 || ""),
               String(payload.assistant_audio_mime_type || "audio/wav"),
@@ -123,18 +139,26 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
 
           if (payload.type === "error") {
             setStatus(`Error: ${payload.message || "Unknown websocket error"}`);
+            setProcessing(false);
+            setSpeaking(false);
           }
         } catch {
           setStatus("Received non-JSON websocket message");
+          setProcessing(false);
+          setSpeaking(false);
         }
       };
 
       ws.onerror = () => {
         setStatus("WebSocket connection error");
+        setProcessing(false);
+        setSpeaking(false);
       };
 
       ws.onclose = () => {
         setConnected(false);
+        setProcessing(false);
+        setSpeaking(false);
       };
 
       const recorder = new MediaRecorder(mediaStream);
@@ -149,6 +173,7 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
         }
 
         const audioB64 = await blobToBase64(evt.data);
+        setProcessing(true);
         wsRef.current.send(
           JSON.stringify({
             type: "audio_chunk",
@@ -169,7 +194,7 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
       setStatus(`Error: ${message}`);
       closeSession();
     }
-  }, [closeSession, onVoiceUpdate, wsUrl]);
+  }, [closeSession, onVoiceUpdate, playAssistantAudio, wsUrl]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -190,7 +215,13 @@ export default function StreamingVoicePanel({ applicationId, onVoiceUpdate }: Pr
           Stop
         </button>
       </div>
-      <p className="text-sm text-slate-600">{status}</p>
+      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+        <span>{status}</span>
+        {recording ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-800">Listening...</span> : null}
+        {processing ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800">Processing...</span> : null}
+        {speaking ? <span className="rounded-full bg-sky-100 px-2 py-1 text-xs text-sky-800">AI Speaking...</span> : null}
+        {(recording || processing || speaking) ? <span className="animate-pulse text-slate-400">● ● ●</span> : null}
+      </div>
       <div className="mt-3 max-h-48 space-y-1 overflow-auto rounded border border-slate-200 p-2 text-sm text-slate-700">
         {messages.length === 0 ? <p>No voice exchanges yet.</p> : null}
         {messages.map((line, index) => (

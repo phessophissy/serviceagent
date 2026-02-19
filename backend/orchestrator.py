@@ -55,8 +55,8 @@ class ServiceAgentOrchestrator:
     @staticmethod
     def _default_target_url(application_type: str) -> str:
         if application_type == ApplicationType.SCHOLARSHIP_APPLICATION.value:
-            return "https://example.org/demo-scholarship-form"
-        return "https://example.org/demo-application-form"
+            return f"{settings.app_base_url}/demo-scholarship-form"
+        return f"{settings.app_base_url}/demo-application-form"
 
     @staticmethod
     def _demo_knowledge_base(scenario: DemoScenario) -> dict[str, Any]:
@@ -64,7 +64,7 @@ class ServiceAgentOrchestrator:
             return {
                 "goal": "Complete international scholarship application",
                 "scenario": scenario.value,
-                "target_url": "https://www.w3schools.com/html/html_forms.asp",
+                "target_url": f"{settings.app_base_url}/demo-scholarship-form",
                 "task_template": [
                     {"step": 1, "action": "collect_user_info"},
                     {"step": 2, "action": "collect_document"},
@@ -118,6 +118,61 @@ class ServiceAgentOrchestrator:
             "status": status,
         }
 
+    @staticmethod
+    def _planner_status_label(status: ApplicationStatus | str) -> str:
+        normalized = str(status)
+        if normalized in (ApplicationStatus.WAITING_DOCUMENTS.value, ApplicationStatus.PROCESSING_DOCUMENTS.value):
+            return "collecting_documents"
+        if normalized in (
+            ApplicationStatus.COLLECTING_INFORMATION.value,
+            ApplicationStatus.NEEDS_USER_CONFIRMATION.value,
+            ApplicationStatus.CREATED.value,
+        ):
+            return "waiting_user"
+        if normalized == ApplicationStatus.AUTOMATING_SUBMISSION.value:
+            return "automating"
+        if normalized in (ApplicationStatus.SUBMITTED.value, ApplicationStatus.COMPLETED.value):
+            return "submitted"
+        return "waiting_user"
+
+    @staticmethod
+    def _derive_planner_steps(tasks: list[dict[str, Any]], next_action: str) -> tuple[str, list[str]]:
+        completed_steps = [task.get("action", "") for task in tasks if task.get("status") == "completed"]
+        current_step = ""
+        for task in tasks:
+            status = task.get("status")
+            if status in ("in_progress", "pending"):
+                current_step = str(task.get("action", ""))
+                break
+        if not current_step:
+            current_step = next_action
+        return current_step, [step for step in completed_steps if step]
+
+    def _persist_planner_state(self, application_id: str, app: dict[str, Any], plan: dict[str, Any]) -> None:
+        tasks = plan.get("tasks", [])
+        next_action = str(plan.get("next_action", ""))
+        current_step, completed_steps = self._derive_planner_steps(tasks if isinstance(tasks, list) else [], next_action)
+        state = {
+            "goal": plan.get("goal", ""),
+            "current_step": current_step,
+            "next_action": next_action,
+            "completed_steps": completed_steps,
+            "missing_requirements": plan.get("missing_requirements", []),
+            "reasoning_summary": plan.get("reasoning_summary", ""),
+            "status": self._planner_status_label(app.get("status", "")),
+        }
+        self.repo.put_planner_state(application_id, state)
+
+    def _persist_timeline(self, application_id: str, timeline: list[dict[str, Any]]) -> None:
+        if not isinstance(timeline, list):
+            return
+        for entry in timeline:
+            if not isinstance(entry, dict):
+                continue
+            payload = dict(entry)
+            payload["step_number"] = payload.get("step_number") or payload.get("step") or len(timeline)
+            self.repo.put_automation_timeline_step(application_id, payload)
+
     def _run_planning_loop(
         self,
         application_id: str,
@@ -142,13 +197,14 @@ class ServiceAgentOrchestrator:
                 interview_history=app.get("interview_history", []),
                 previous_tasks=app.get("planner_tasks", []),
                 previous_agent_outputs=app.get("last_agent_outputs", {}),
-                current_status=str(app.get("status", ApplicationStatus.IN_PROGRESS.value)),
+                current_status=str(app.get("status", ApplicationStatus.COLLECTING_INFORMATION.value)),
                 demo_mode=bool(app.get("demo_mode", False)),
                 demo_context=app.get("demo_context", {}),
             )
 
-            planned_state = self._planner_state_update(plan, app.get("status", ApplicationStatus.IN_PROGRESS))
+            planned_state = self._planner_state_update(plan, app.get("status", ApplicationStatus.COLLECTING_INFORMATION))
             app = self.repo.update_application(application_id, planned_state)
+            self._persist_planner_state(application_id, app, plan)
             self.repo.append_agent_log(
                 application_id,
                 user_id,
@@ -160,6 +216,8 @@ class ServiceAgentOrchestrator:
                     "next_action": plan.get("next_action"),
                     "missing_requirements": plan.get("missing_requirements", []),
                 },
+                action="plan",
+                result="ok",
             )
 
             next_action = str(plan.get("next_action", "collect_user_info"))
@@ -171,7 +229,7 @@ class ServiceAgentOrchestrator:
                     current_profile=app.get("profile", {}),
                 )
                 questions = interview.get("next_questions", [])
-                status = ApplicationStatus.NEEDS_USER_INPUT if questions else ApplicationStatus.IN_PROGRESS
+                status = ApplicationStatus.COLLECTING_INFORMATION
                 updates = {
                     "profile": interview.get("profile", app.get("profile", {})),
                     "clarification_questions": questions,
@@ -179,8 +237,17 @@ class ServiceAgentOrchestrator:
                     "last_agent_outputs": self._merge_agent_output(app, "interview_agent", interview),
                 }
                 app = self.repo.update_application(application_id, updates)
-                self.repo.append_agent_log(application_id, user_id, "interview_agent", "INFO", "Interview collected data", interview)
-                if status == ApplicationStatus.NEEDS_USER_INPUT:
+                self.repo.append_agent_log(
+                    application_id,
+                    user_id,
+                    "interview_agent",
+                    "INFO",
+                    "Interview collected data",
+                    interview,
+                    action="collect_user_info",
+                    result="needs_more_info" if questions else "ok",
+                )
+                if questions:
                     return app
                 continue
 
@@ -191,18 +258,29 @@ class ServiceAgentOrchestrator:
                     if missing:
                         questions = [f"Please upload: {', '.join(missing)}"]
                 updates = {
-                    "status": ApplicationStatus.NEEDS_USER_INPUT,
+                    "status": ApplicationStatus.WAITING_DOCUMENTS,
                     "clarification_questions": questions,
                     "missing_requirements": plan.get("missing_requirements", []),
                     "last_agent_outputs": self._merge_agent_output(app, "planner_agent", plan),
                 }
-                return self.repo.update_application(application_id, updates)
+                updated = self.repo.update_application(application_id, updates)
+                self.repo.append_agent_log(
+                    application_id,
+                    user_id,
+                    "planner_agent",
+                    "INFO",
+                    "Waiting for documents",
+                    {"missing_requirements": updates["missing_requirements"]},
+                    action="collect_document",
+                    result="waiting_user",
+                )
+                return updated
 
             if next_action == "extract_document":
                 doc = self._pick_unprocessed_document(app)
                 if not doc:
                     updates = {
-                        "status": ApplicationStatus.NEEDS_USER_INPUT,
+                        "status": ApplicationStatus.WAITING_DOCUMENTS,
                         "clarification_questions": ["Please upload required supporting documents."],
                         "last_agent_outputs": self._merge_agent_output(app, "planner_agent", plan),
                     }
@@ -239,10 +317,19 @@ class ServiceAgentOrchestrator:
                 updates = {
                     "documents": docs,
                     "profile": merged_profile,
-                    "status": ApplicationStatus.IN_PROGRESS,
+                    "status": ApplicationStatus.PROCESSING_DOCUMENTS,
                     "last_agent_outputs": self._merge_agent_output(app, "document_agent", extracted),
                 }
-                self.repo.append_agent_log(application_id, user_id, "document_agent", "INFO", "Document processed", extracted)
+                self.repo.append_agent_log(
+                    application_id,
+                    user_id,
+                    "document_agent",
+                    "INFO",
+                    "Document processed",
+                    extracted,
+                    action="extract_document",
+                    result="ok",
+                )
                 self.repo.update_application(application_id, updates)
                 continue
 
@@ -253,7 +340,7 @@ class ServiceAgentOrchestrator:
                     documents=app.get("documents", []),
                 )
                 needs_input = bool(validation.get("missing_fields") or validation.get("conflicts"))
-                status = ApplicationStatus.NEEDS_USER_INPUT if needs_input else ApplicationStatus.READY_FOR_AUTOMATION
+                status = ApplicationStatus.COLLECTING_INFORMATION if needs_input else ApplicationStatus.PROCESSING_DOCUMENTS
                 updates = {
                     "missing_fields": validation.get("missing_fields", []),
                     "conflicts": validation.get("conflicts", []),
@@ -262,13 +349,23 @@ class ServiceAgentOrchestrator:
                     "last_agent_outputs": self._merge_agent_output(app, "validation_agent", validation),
                 }
                 app = self.repo.update_application(application_id, updates)
-                self.repo.append_agent_log(application_id, user_id, "validation_agent", "INFO", "Validation completed", validation)
+                self.repo.append_agent_log(
+                    application_id,
+                    user_id,
+                    "validation_agent",
+                    "INFO",
+                    "Validation completed",
+                    validation,
+                    action="validate_profile",
+                    result="needs_user" if needs_input else "ok",
+                )
                 if needs_input:
                     return app
                 continue
 
             if next_action == "automate_submission":
                 url = target_url or str(app.get("target_url") or self._default_target_url(str(app.get("application_type", ""))))
+                self.repo.update_application(application_id, {"status": ApplicationStatus.AUTOMATING_SUBMISSION})
                 automation = self.automation_agent.submit_application(
                     application_id=application_id,
                     target_url=url,
@@ -276,7 +373,7 @@ class ServiceAgentOrchestrator:
                     documents=app.get("documents", []),
                     application_type=str(app.get("application_type", "")),
                 )
-                status = ApplicationStatus.SUBMITTED if automation.get("success") else ApplicationStatus.FAILED
+                status = ApplicationStatus.SUBMITTED if automation.get("success") else ApplicationStatus.NEEDS_USER_CONFIRMATION
                 updates = {
                     "target_url": url,
                     "automation_steps": automation.get("steps", []),
@@ -284,8 +381,10 @@ class ServiceAgentOrchestrator:
                     "submission_reference": automation.get("submission_reference"),
                     "status": status,
                     "last_agent_outputs": self._merge_agent_output(app, "automation_agent", automation),
+                    "automation_error": automation.get("error"),
                 }
                 app = self.repo.update_application(application_id, updates)
+                self._persist_timeline(application_id, automation.get("timeline", []))
                 self.repo.append_agent_log(
                     application_id,
                     user_id,
@@ -293,25 +392,62 @@ class ServiceAgentOrchestrator:
                     "INFO" if automation.get("success") else "ERROR",
                     "Automation run completed",
                     automation,
+                    action="automate_submission",
+                    result="ok" if automation.get("success") else "failed",
                 )
-                self.notification_agent.notify_status(
-                    user_id=user_id,
-                    application_id=application_id,
-                    status=status,
-                    submission_reference=automation.get("submission_reference"),
-                )
-                self.repo.append_agent_log(
+                if automation.get("success"):
+                    self.notification_agent.notify_status(
+                        user_id=user_id,
+                        application_id=application_id,
+                        status=status,
+                        submission_reference=automation.get("submission_reference"),
+                    )
+                    self.repo.append_agent_log(
+                        application_id,
+                        user_id,
+                        "notification_agent",
+                        "INFO",
+                        "Notification sent",
+                        {"status": status},
+                        action="notify_status",
+                        result="ok",
+                    )
+                    return app
+
+                retry_count = int(app.get("automation_retry_count", 0))
+                if retry_count < 1:
+                    self.repo.update_application(
+                        application_id,
+                        {
+                            "automation_retry_count": retry_count + 1,
+                            "status": ApplicationStatus.AUTOMATING_SUBMISSION,
+                        },
+                    )
+                    self.repo.append_agent_log(
+                        application_id,
+                        user_id,
+                        "planner_agent",
+                        "WARNING",
+                        "Automation failed, retrying once",
+                        {"error": automation.get("error")},
+                        action="retry_automation",
+                        result="retrying",
+                    )
+                    continue
+
+                self.repo.update_application(
                     application_id,
-                    user_id,
-                    "notification_agent",
-                    "INFO",
-                    "Notification sent",
-                    {"status": status},
+                    {
+                        "status": ApplicationStatus.NEEDS_USER_CONFIRMATION,
+                        "clarification_questions": [
+                            "Automation hit an error. Do you want to retry or provide additional instructions?"
+                        ],
+                    },
                 )
                 return app
 
             if next_action == "goal_complete":
-                status = app.get("status", ApplicationStatus.READY_FOR_AUTOMATION)
+                status = ApplicationStatus.COMPLETED
                 return self.repo.update_application(
                     application_id,
                     {
@@ -327,19 +463,31 @@ class ServiceAgentOrchestrator:
                 "WARNING",
                 "Planner returned unknown action; waiting for user input",
                 {"next_action": next_action},
+                action="unknown_action",
+                result="needs_user",
             )
             return self.repo.update_application(
                 application_id,
                 {
-                    "status": ApplicationStatus.NEEDS_USER_INPUT,
+                    "status": ApplicationStatus.NEEDS_USER_CONFIRMATION,
                     "clarification_questions": ["Please confirm how you want to proceed."],
                 },
             )
 
+        self.repo.append_agent_log(
+            application_id,
+            user_id,
+            "planner_agent",
+            "WARNING",
+            "Planner reached iteration limit",
+            {},
+            action="planner_iteration_limit",
+            result="needs_user",
+        )
         return self.repo.update_application(
             application_id,
             {
-                "status": ApplicationStatus.NEEDS_USER_INPUT,
+                "status": ApplicationStatus.NEEDS_USER_CONFIRMATION,
                 "clarification_questions": ["Planner reached iteration limit. Please provide clarification."],
             },
         )
@@ -353,7 +501,8 @@ class ServiceAgentOrchestrator:
         demo_scenario: DemoScenario | None = None,
     ) -> dict[str, Any]:
         app_id = str(uuid.uuid4())
-        scenario = demo_scenario or (DemoScenario.INTERNATIONAL_SCHOLARSHIP_APPLICATION if demo_mode else None)
+        demo_enabled = demo_mode or settings.demo_mode
+        scenario = demo_scenario or (DemoScenario.INTERNATIONAL_SCHOLARSHIP_APPLICATION if demo_enabled else None)
         demo_context = self._demo_knowledge_base(scenario) if scenario else {}
         starter_profile = demo_context.get("starter_profile", {}) if isinstance(demo_context, dict) else {}
         target_url = demo_context.get("target_url") if isinstance(demo_context, dict) else None
@@ -362,11 +511,11 @@ class ServiceAgentOrchestrator:
             application_id=app_id,
             user_id=user_id,
             application_type=application_type,
-            status=ApplicationStatus.IN_PROGRESS,
+            status=ApplicationStatus.CREATED,
             interview_history=[{"role": "user", "message": prompt, "timestamp": self._now_iso()}],
             profile=starter_profile if isinstance(starter_profile, dict) else {},
             planner_goal=demo_context.get("goal", prompt) if isinstance(demo_context, dict) else prompt,
-            demo_mode=demo_mode,
+            demo_mode=demo_enabled,
             demo_scenario=scenario,
             demo_context=demo_context if isinstance(demo_context, dict) else {},
             target_url=str(target_url) if target_url else None,
@@ -382,9 +531,11 @@ class ServiceAgentOrchestrator:
             {
                 "application_type": application_type,
                 "goal": prompt,
-                "demo_mode": demo_mode,
+                "demo_mode": demo_enabled,
                 "demo_scenario": scenario.value if scenario else None,
             },
+            action="create_application",
+            result="ok",
         )
 
         return self._run_planning_loop(app_id, user_id, user_request=prompt)
@@ -450,6 +601,8 @@ class ServiceAgentOrchestrator:
             "INFO",
             "Upload URL generated",
             {"document_id": document_id, "s3_key": s3_key},
+            action="request_upload_url",
+            result="ok",
         )
         return {"document_id": document_id, "upload_url": upload_url, "s3_key": s3_key}
 
@@ -487,12 +640,21 @@ class ServiceAgentOrchestrator:
             {
                 "documents": docs,
                 "profile": merged_profile,
-                "status": ApplicationStatus.IN_PROGRESS,
+                "status": ApplicationStatus.PROCESSING_DOCUMENTS,
                 "last_agent_outputs": self._merge_agent_output(app, "document_agent", extracted),
             },
         )
 
-        self.repo.append_agent_log(application_id, user_id, "document_agent", "INFO", "Document extracted", extracted)
+        self.repo.append_agent_log(
+            application_id,
+            user_id,
+            "document_agent",
+            "INFO",
+            "Document extracted",
+            extracted,
+            action="process_document",
+            result="ok",
+        )
         return self._run_planning_loop(application_id, user_id, user_request="Document uploaded")
 
     def validate_application(self, application_id: str, user_id: str) -> dict[str, Any]:
@@ -507,7 +669,7 @@ class ServiceAgentOrchestrator:
             documents=app.get("documents", []),
         )
         needs_input = bool(validation.get("missing_fields") or validation.get("conflicts"))
-        status = ApplicationStatus.NEEDS_USER_INPUT if needs_input else ApplicationStatus.READY_FOR_AUTOMATION
+        status = ApplicationStatus.COLLECTING_INFORMATION if needs_input else ApplicationStatus.PROCESSING_DOCUMENTS
 
         self.repo.update_application(
             application_id,
@@ -520,7 +682,16 @@ class ServiceAgentOrchestrator:
             },
         )
 
-        self.repo.append_agent_log(application_id, user_id, "validation_agent", "INFO", "Validation completed", validation)
+        self.repo.append_agent_log(
+            application_id,
+            user_id,
+            "validation_agent",
+            "INFO",
+            "Validation completed",
+            validation,
+            action="validate_application",
+            result="needs_user" if needs_input else "ok",
+        )
         if needs_input:
             return self.repo.get_application(application_id) or {}
         return self._run_planning_loop(application_id, user_id, user_request="Validation complete")
@@ -551,14 +722,33 @@ class ServiceAgentOrchestrator:
         if not app:
             raise KeyError("Application not found")
         self._assert_owner(app, user_id)
+        stored = self.repo.get_planner_state(application_id) or {}
+        if stored:
+            stored["application_id"] = application_id
+            stored["current_step"] = stored.get("current_step", stored.get("next_action", ""))
+            stored["completed_steps"] = stored.get("completed_steps", [])
+            stored["missing_requirements"] = stored.get("missing_requirements", [])
+            stored["status"] = stored.get("status", self._planner_status_label(app.get("status", "")))
+            stored["reasoning_summary"] = stored.get("reasoning_summary", "")
+            stored["tasks"] = stored.get("tasks", [])
+            stored["updated_at"] = stored.get("updated_at", self._now_iso())
+            return stored
+
+        tasks = app.get("planner_tasks", [])
+        current_step, completed_steps = self._derive_planner_steps(
+            tasks if isinstance(tasks, list) else [],
+            str(app.get("planner_next_action", "")),
+        )
         return {
             "application_id": application_id,
             "goal": app.get("planner_goal", ""),
-            "reasoning_summary": app.get("planner_reasoning", ""),
+            "current_step": current_step,
             "next_action": app.get("planner_next_action", ""),
-            "tasks": app.get("planner_tasks", []),
+            "completed_steps": completed_steps,
             "missing_requirements": app.get("missing_requirements", []),
-            "status": app.get("status", ApplicationStatus.IN_PROGRESS),
+            "status": self._planner_status_label(app.get("status", ApplicationStatus.COLLECTING_INFORMATION)),
+            "reasoning_summary": app.get("planner_reasoning", ""),
+            "tasks": tasks if isinstance(tasks, list) else [],
             "updated_at": app.get("updated_at", self._now_iso()),
         }
 
@@ -567,13 +757,17 @@ class ServiceAgentOrchestrator:
         if not app:
             raise KeyError("Application not found")
         self._assert_owner(app, user_id)
-        raw_timeline = app.get("automation_timeline", [])
+        raw_timeline = self.repo.list_automation_timeline(application_id)
+        if not raw_timeline:
+            raw_timeline = app.get("automation_timeline", [])
         timeline: list[dict[str, Any]] = []
         if isinstance(raw_timeline, list):
             for item in raw_timeline:
                 if not isinstance(item, dict):
                     continue
                 enriched = dict(item)
+                if "step" not in enriched and "step_number" in enriched:
+                    enriched["step"] = enriched.get("step_number")
                 key = enriched.get("screenshot_s3_key")
                 if isinstance(key, str) and key:
                     try:

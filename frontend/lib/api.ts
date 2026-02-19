@@ -53,8 +53,10 @@ export async function getPlannerState(applicationId: string) {
   return callApi<{
     application_id: string;
     goal: string;
+    current_step: string;
     reasoning_summary: string;
     next_action: string;
+    completed_steps: string[];
     tasks: Array<Record<string, unknown>>;
     missing_requirements: string[];
     status: string;

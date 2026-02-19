@@ -47,7 +47,7 @@ export default function DocumentUploader({ applicationId, missingRequirements, o
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Documents</div>
+      <div className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">Required Documents</div>
       <ul className="mb-3 list-disc space-y-1 pl-5 text-sm text-slate-700">
         {missingRequirements.length > 0 ? (
           missingRequirements.map((item) => <li key={item}>Required: {item.replaceAll("_", " ")}</li>)

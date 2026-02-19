@@ -9,6 +9,8 @@ class Settings:
     applications_table: str = os.getenv("APPLICATIONS_TABLE", "ServiceAgentApplications")
     extracted_docs_table: str = os.getenv("EXTRACTED_DOCS_TABLE", "ServiceAgentExtractedDocuments")
     agent_logs_table: str = os.getenv("AGENT_LOGS_TABLE", "ServiceAgentAgentLogs")
+    planner_state_table: str = os.getenv("PLANNER_STATE_TABLE", "ServiceAgentPlannerState")
+    automation_timeline_table: str = os.getenv("AUTOMATION_TIMELINE_TABLE", "ServiceAgentAutomationTimeline")
     documents_bucket: str = os.getenv("DOCUMENTS_BUCKET", "")
     artifacts_bucket: str = os.getenv("ARTIFACTS_BUCKET", "service-agent-demo-artifacts")
 
@@ -21,6 +23,7 @@ class Settings:
     app_base_url: str = os.getenv("APP_BASE_URL", "http://localhost:3000")
     local_mode: bool = os.getenv("LOCAL_MODE", "false").lower() == "true"
     notification_sender_email: str = os.getenv("NOTIFICATION_SENDER_EMAIL", "")
+    demo_mode: bool = os.getenv("DEMO_MODE", "false").lower() == "true"
 
 
 settings = Settings()

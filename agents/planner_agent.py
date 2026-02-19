@@ -72,6 +72,7 @@ class PlannerAgent(Agent):
             profile=profile,
             documents=documents,
             previous_tasks=previous_tasks,
+            previous_agent_outputs=previous_agent_outputs,
         )
         return normalized
 
@@ -200,6 +201,7 @@ class PlannerAgent(Agent):
         profile: dict[str, Any],
         documents: list[dict[str, Any]],
         previous_tasks: list[dict[str, Any]],
+        previous_agent_outputs: dict[str, Any],
     ) -> dict[str, Any]:
         if isinstance(raw_plan.get("tasks"), list) and isinstance(raw_plan.get("next_action"), str):
             normalized_tasks = []
@@ -230,6 +232,7 @@ class PlannerAgent(Agent):
             profile=profile,
             documents=documents,
             previous_tasks=previous_tasks,
+            previous_agent_outputs=previous_agent_outputs,
             raw_plan=raw_plan,
         )
 
@@ -241,6 +244,7 @@ class PlannerAgent(Agent):
         profile: dict[str, Any],
         documents: list[dict[str, Any]],
         previous_tasks: list[dict[str, Any]],
+        previous_agent_outputs: dict[str, Any],
         raw_plan: dict[str, Any],
     ) -> dict[str, Any]:
         required_by_type = {
@@ -269,7 +273,19 @@ class PlannerAgent(Agent):
         required_profile_fields = ["legal_name", "date_of_birth", "address"]
         missing_profile_fields = [field for field in required_profile_fields if not profile.get(field)]
 
-        if missing_profile_fields:
+        automation_error = None
+        if isinstance(previous_agent_outputs, dict):
+            automation_payload = previous_agent_outputs.get("automation_agent")
+            if isinstance(automation_payload, dict):
+                automation_error = automation_payload.get("error")
+
+        if automation_error:
+            next_action = "collect_user_info"
+            reasoning = "Automation failed; request clarification or corrections before retrying."
+            clarification_questions = [
+                "The automation step failed. Do you want to retry or provide corrected details?"
+            ]
+        elif missing_profile_fields:
             next_action = "collect_user_info"
             reasoning = "Core profile fields are missing; ask focused interview questions first."
             clarification_questions = [f"Please provide your {field.replace('_', ' ')}." for field in missing_profile_fields]

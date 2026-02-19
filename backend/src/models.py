@@ -23,11 +23,14 @@ class DemoScenario(str, Enum):
 
 
 class ApplicationStatus(str, Enum):
-    DRAFT = "draft"
-    IN_PROGRESS = "in_progress"
-    NEEDS_USER_INPUT = "needs_user_input"
-    READY_FOR_AUTOMATION = "ready_for_automation"
+    CREATED = "created"
+    COLLECTING_INFORMATION = "collecting_information"
+    WAITING_DOCUMENTS = "waiting_documents"
+    PROCESSING_DOCUMENTS = "processing_documents"
+    AUTOMATING_SUBMISSION = "automating_submission"
     SUBMITTED = "submitted"
+    COMPLETED = "completed"
+    NEEDS_USER_CONFIRMATION = "needs_user_confirmation"
     FAILED = "failed"
 
 
@@ -92,11 +95,13 @@ class AutomationRunResponse(BaseModel):
 class PlannerStateResponse(BaseModel):
     application_id: str
     goal: str
-    reasoning_summary: str
+    current_step: str
     next_action: str
-    tasks: list[dict[str, Any]]
+    completed_steps: list[str]
     missing_requirements: list[str]
-    status: ApplicationStatus
+    status: str
+    reasoning_summary: str
+    tasks: list[dict[str, Any]] = Field(default_factory=list)
     updated_at: str
 
 
@@ -139,6 +144,8 @@ class ApplicationRecord(BaseModel):
     demo_scenario: DemoScenario | None = None
     demo_context: dict[str, Any] = Field(default_factory=dict)
     target_url: str | None = None
+    automation_retry_count: int = 0
+    automation_error: str | None = None
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
 
@@ -150,5 +157,7 @@ class AgentLogRecord(BaseModel):
     agent_name: str
     level: str
     message: str
+    action: str | None = None
+    result: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=utc_now_iso)

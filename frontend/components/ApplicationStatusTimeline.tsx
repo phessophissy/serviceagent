@@ -2,6 +2,8 @@ type LogRecord = {
   created_at?: string;
   agent_name?: string;
   message?: string;
+  action?: string;
+  result?: string;
 };
 
 type Props = {
@@ -18,6 +20,8 @@ export default function ApplicationStatusTimeline({ logs }: Props) {
             <div className="text-xs text-slate-500">{log.created_at || "unknown time"}</div>
             <div className="text-sm font-medium text-slate-900">{log.agent_name || "agent"}</div>
             <div className="text-sm text-slate-700">{log.message || "event"}</div>
+            {log.action ? <div className="text-xs text-slate-500">action: {log.action}</div> : null}
+            {log.result ? <div className="text-xs text-slate-500">result: {log.result}</div> : null}
           </li>
         ))}
       </ul>

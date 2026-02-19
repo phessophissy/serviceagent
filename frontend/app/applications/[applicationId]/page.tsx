@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import AIThinkingPanel from "@/components/AIThinkingPanel";
 import AutomationTimeline from "@/components/AutomationTimeline";
 import ApplicationStatusTimeline from "@/components/ApplicationStatusTimeline";
+import ApplicationProgress from "@/components/ApplicationProgress";
 import DocumentUploader from "@/components/DocumentUploader";
 import StreamingVoicePanel from "@/components/StreamingVoicePanel";
 import { getApplication, getApplicationLogs, getApplicationTimeline, getPlannerState } from "@/lib/api";
@@ -49,21 +50,34 @@ export default function ApplicationDetailPage() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-900">Application {applicationId}</h1>
-        <p className="mt-2 text-sm text-slate-600">Status: {String(application?.status || "loading")}</p>
-        <pre className="mt-3 overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-200">
-          {JSON.stringify(application, null, 2)}
-        </pre>
-      </section>
+      <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h1 className="text-2xl font-bold text-slate-900">Application {applicationId}</h1>
+          <p className="mt-2 text-sm text-slate-600">Status: {String(application?.status || "loading")}</p>
+          {String(application?.status || "").toLowerCase() === "needs_user_confirmation" ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              The AI encountered a problem and needs your input before proceeding.
+            </div>
+          ) : null}
+          <pre className="mt-3 overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-200">
+            {JSON.stringify(application, null, 2)}
+          </pre>
+        </section>
 
-      <AIThinkingPanel
-        goal={String(plannerState?.goal || "")}
-        reasoningSummary={String(plannerState?.reasoning_summary || "")}
-        nextAction={String(plannerState?.next_action || "")}
-        missingRequirements={Array.isArray(plannerState?.missing_requirements) ? (plannerState?.missing_requirements as string[]) : []}
-        tasks={Array.isArray(plannerState?.tasks) ? (plannerState?.tasks as Array<{ step?: number; action?: string; status?: string }>) : []}
-      />
+        <div className="space-y-6">
+          <AIThinkingPanel
+            goal={String(plannerState?.goal || "")}
+            reasoningSummary={String(plannerState?.reasoning_summary || "")}
+            currentStep={String(plannerState?.current_step || "")}
+            nextAction={String(plannerState?.next_action || "")}
+            missingRequirements={
+              Array.isArray(plannerState?.missing_requirements) ? (plannerState?.missing_requirements as string[]) : []
+            }
+            tasks={Array.isArray(plannerState?.tasks) ? (plannerState?.tasks as Array<{ step?: number; action?: string; status?: string }>) : []}
+          />
+          <ApplicationProgress status={String(application?.status || "created")} />
+        </div>
+      </div>
 
       <StreamingVoicePanel applicationId={applicationId} onVoiceUpdate={() => void refresh()} />
       <DocumentUploader

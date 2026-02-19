@@ -7,6 +7,7 @@ type PlannerTask = {
 type Props = {
   goal: string;
   reasoningSummary: string;
+  currentStep: string;
   nextAction: string;
   missingRequirements: string[];
   tasks: PlannerTask[];
@@ -19,29 +20,39 @@ function taskBadgeColor(status: string): string {
   return "bg-slate-100 text-slate-700";
 }
 
-export default function AIThinkingPanel({ goal, reasoningSummary, nextAction, missingRequirements, tasks }: Props) {
+export default function AIThinkingPanel({
+  goal,
+  reasoningSummary,
+  currentStep,
+  nextAction,
+  missingRequirements,
+  tasks,
+}: Props) {
   const completedTasks = tasks.filter((task) => task.status === "completed").length;
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-bold text-slate-900">AI Thinking Panel</h2>
+      <h2 className="text-lg font-bold text-slate-900">AI Activity</h2>
       <p className="mt-2 text-sm text-slate-700">
         <span className="font-semibold">Current goal:</span> {goal || "No goal yet"}
       </p>
       <p className="mt-1 text-sm text-slate-700">
-        <span className="font-semibold">Reasoning summary:</span> {reasoningSummary || "Planner has not produced a summary yet."}
+        <span className="font-semibold">What the AI is doing now:</span> {currentStep || "Waiting"}
       </p>
       <p className="mt-1 text-sm text-slate-700">
-        <span className="font-semibold">Next action:</span> {nextAction || "Waiting"}
+        <span className="font-semibold">What it needs from you:</span>{" "}
+        {missingRequirements.length > 0 ? missingRequirements.join(", ") : "No additional items"}
+      </p>
+      <p className="mt-1 text-sm text-slate-700">
+        <span className="font-semibold">What it will do next:</span> {nextAction || "Waiting"}
+      </p>
+      <p className="mt-2 text-sm text-slate-700">
+        <span className="font-semibold">Planner summary:</span>{" "}
+        {reasoningSummary || "Planner has not produced a summary yet."}
       </p>
 
       <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
         <span className="font-semibold">Completed tasks:</span> {completedTasks}/{tasks.length || 0}
-      </div>
-
-      <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-        <span className="font-semibold">Missing requirements:</span>{" "}
-        {missingRequirements.length > 0 ? missingRequirements.join(", ") : "none"}
       </div>
 
       <ul className="mt-4 space-y-2">

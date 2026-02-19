@@ -41,6 +41,8 @@ class DynamoRepository:
         self.applications_table = self.ddb.Table(settings.applications_table)
         self.extracted_docs_table = self.ddb.Table(settings.extracted_docs_table)
         self.agent_logs_table = self.ddb.Table(settings.agent_logs_table)
+        self.planner_state_table = self.ddb.Table(settings.planner_state_table)
+        self.automation_timeline_table = self.ddb.Table(settings.automation_timeline_table)
 
     @staticmethod
     def now_iso() -> str:
@@ -101,6 +103,8 @@ class DynamoRepository:
         level: str,
         message: str,
         payload: dict[str, Any] | None = None,
+        action: str | None = None,
+        result: str | None = None,
     ) -> None:
         log_id = str(uuid.uuid4())
         item = {
@@ -110,6 +114,8 @@ class DynamoRepository:
             "agent_name": agent_name,
             "level": level,
             "message": message,
+            "action": action,
+            "result": result,
             "payload": payload or {},
             "created_at": self.now_iso(),
         }
@@ -118,6 +124,37 @@ class DynamoRepository:
     def list_agent_logs(self, application_id: str) -> list[dict[str, Any]]:
         response = self.agent_logs_table.query(
             IndexName="application_id-created_at-index",
+            KeyConditionExpression=Key("application_id").eq(application_id),
+            ScanIndexForward=True,
+        )
+        items = response.get("Items", [])
+        return [_from_decimal(item) for item in items]
+
+    def put_planner_state(self, application_id: str, state: dict[str, Any]) -> None:
+        payload = dict(state)
+        payload["application_id"] = application_id
+        payload["updated_at"] = self.now_iso()
+        self.planner_state_table.put_item(Item=_to_decimal(payload))
+
+    def get_planner_state(self, application_id: str) -> dict[str, Any] | None:
+        response = self.planner_state_table.get_item(Key={"application_id": application_id})
+        item = response.get("Item")
+        return _from_decimal(item) if item else None
+
+    def put_automation_timeline_step(self, application_id: str, step: dict[str, Any]) -> None:
+        payload = dict(step)
+        payload["application_id"] = application_id
+        if "step_number" not in payload and "step" in payload:
+            payload["step_number"] = payload["step"]
+        try:
+            payload["step_number"] = int(payload.get("step_number", 0))
+        except (TypeError, ValueError):
+            payload["step_number"] = 0
+        payload["created_at"] = payload.get("timestamp") or self.now_iso()
+        self.automation_timeline_table.put_item(Item=_to_decimal(payload))
+
+    def list_automation_timeline(self, application_id: str) -> list[dict[str, Any]]:
+        response = self.automation_timeline_table.query(
             KeyConditionExpression=Key("application_id").eq(application_id),
             ScanIndexForward=True,
         )

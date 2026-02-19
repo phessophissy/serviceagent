@@ -16,6 +16,8 @@ Globals:
         APPLICATIONS_TABLE: !Ref ApplicationsTable
         EXTRACTED_DOCS_TABLE: !Ref ExtractedDocumentsTable
         AGENT_LOGS_TABLE: !Ref AgentLogsTable
+        PLANNER_STATE_TABLE: !Ref PlannerStateTable
+        AUTOMATION_TIMELINE_TABLE: !Ref AutomationTimelineTable
         DOCUMENTS_BUCKET: !Ref DocumentsBucket
         ARTIFACTS_BUCKET: !Ref ArtifactsBucketName
         COGNITO_USER_POOL_ID: !Ref UserPool
@@ -25,6 +27,7 @@ Globals:
         NOVA_LITE_MODEL_ID: !Ref NovaLiteModelId
         NOVA_ACT_MODEL_ID: !Ref NovaActModelId
         NOTIFICATION_SENDER_EMAIL: !Ref NotificationSenderEmail
+        DEMO_MODE: !Ref DemoMode
 
 Parameters:
   AWSRegion:
@@ -48,6 +51,9 @@ Parameters:
   ArtifactsBucketName:
     Type: String
     Default: service-agent-demo-artifacts
+  DemoMode:
+    Type: String
+    Default: "false"
 
 Resources:
   ServiceAgentHttpApi:
@@ -80,6 +86,10 @@ Resources:
             TableName: !Ref ExtractedDocumentsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref AgentLogsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlannerStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AutomationTimelineTable
         - S3CrudPolicy:
             BucketName: !Ref DocumentsBucket
         - S3CrudPolicy:
@@ -173,6 +183,32 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+
+  PlannerStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: application_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: application_id
+          KeyType: HASH
+
+  AutomationTimelineTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: application_id
+          AttributeType: S
+        - AttributeName: step_number
+          AttributeType: N
+      KeySchema:
+        - AttributeName: application_id
+          KeyType: HASH
+        - AttributeName: step_number
+          KeyType: RANGE
 
   UserPool:
     Type: AWS::Cognito::UserPool

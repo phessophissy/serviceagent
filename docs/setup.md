@@ -16,6 +16,8 @@ cp .env.example .env
 ```
 
 Set the Bedrock Nova model IDs that exist in your account/region.
+Set `DEMO_MODE=true` to enable the International Scholarship demo flow.
+Ensure `APP_BASE_URL` points to the frontend host (default `http://localhost:3000`).
 
 ## 3. Run Backend Locally
 

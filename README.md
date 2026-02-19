@@ -56,7 +56,7 @@ Service Agent includes a preconfigured demo scenario:
 
 - `international_scholarship_application`
 - Preloaded planning knowledge base
-- Demo automation target URL for reliable submission walkthrough
+- Demo automation target URL for reliable submission walkthrough (`/demo-scholarship-form`)
 - Dynamic missing requirements workflow (`passport`, `academic_transcript`)
 
 ## Backend API (Core Endpoints)
@@ -81,11 +81,14 @@ DynamoDB tables:
 - `Applications`
 - `ExtractedDocuments`
 - `AgentLogs`
+- `PlannerState`
+- `AutomationTimeline`
 
 S3 objects:
 
 - Raw uploaded documents (private)
 - Extracted JSON outputs
+- Automation screenshots (demo artifacts)
 
 ## Security Defaults
 

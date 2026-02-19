@@ -260,6 +260,8 @@ async def interview_stream(websocket: WebSocket, application_id: str) -> None:
             "missing_requirements": planner_state.get("missing_requirements", []),
             "goal": planner_state.get("goal", ""),
             "next_action": planner_state.get("next_action", ""),
+            "current_step": planner_state.get("current_step", ""),
+            "completed_steps": planner_state.get("completed_steps", []),
             "reasoning_summary": planner_state.get("reasoning_summary", ""),
         }
         await websocket.send_json(payload)
