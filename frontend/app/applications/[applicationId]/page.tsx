@@ -3,34 +3,31 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
+import AgentActivityPanel from "@/components/AgentActivityPanel";
 import AIThinkingPanel from "@/components/AIThinkingPanel";
 import AutomationTimeline from "@/components/AutomationTimeline";
-import ApplicationStatusTimeline from "@/components/ApplicationStatusTimeline";
 import ApplicationProgress from "@/components/ApplicationProgress";
 import DocumentUploader from "@/components/DocumentUploader";
 import StreamingVoicePanel from "@/components/StreamingVoicePanel";
-import { getApplication, getApplicationLogs, getApplicationTimeline, getPlannerState } from "@/lib/api";
+import { getApplication, getApplicationTimeline, getPlannerState } from "@/lib/api";
 
 export default function ApplicationDetailPage() {
   const params = useParams<{ applicationId: string }>();
   const applicationId = params.applicationId;
 
   const [application, setApplication] = useState<Record<string, unknown> | null>(null);
-  const [logs, setLogs] = useState<Array<Record<string, unknown>>>([]);
   const [timeline, setTimeline] = useState<Array<Record<string, unknown>>>([]);
   const [plannerState, setPlannerState] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
 
   const refresh = async () => {
     try {
-      const [app, logPayload, timelinePayload, plannerPayload] = await Promise.all([
+      const [app, timelinePayload, plannerPayload] = await Promise.all([
         getApplication(applicationId),
-        getApplicationLogs(applicationId),
         getApplicationTimeline(applicationId),
         getPlannerState(applicationId),
       ]);
       setApplication(app as Record<string, unknown>);
-      setLogs(logPayload.logs);
       setTimeline(timelinePayload.timeline);
       setPlannerState(plannerPayload as Record<string, unknown>);
       setError("");
@@ -79,13 +76,13 @@ export default function ApplicationDetailPage() {
         </div>
       </div>
 
+      <AgentActivityPanel applicationId={applicationId} />
       <StreamingVoicePanel applicationId={applicationId} onVoiceUpdate={() => void refresh()} />
       <DocumentUploader
         applicationId={applicationId}
         missingRequirements={Array.isArray(plannerState?.missing_requirements) ? (plannerState?.missing_requirements as string[]) : []}
         onUploaded={refresh}
       />
-      <ApplicationStatusTimeline logs={logs as Array<{ created_at?: string; agent_name?: string; message?: string }>} />
       <AutomationTimeline
         timeline={
           timeline as Array<{

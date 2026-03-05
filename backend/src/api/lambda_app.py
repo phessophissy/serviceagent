@@ -4,7 +4,9 @@ import json
 from typing import Annotated
 
 import boto3
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from mangum import Mangum
 from botocore.exceptions import BotoCoreError, ClientError
 
@@ -28,6 +30,17 @@ from backend.orchestrator import ServiceAgentOrchestrator
 from backend.src.services.sonic_streaming_service import NovaSonicStreamingService
 
 app = FastAPI(title="Service Agent API", version="0.1.0")
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 orchestrator = ServiceAgentOrchestrator()
 sonic_service = NovaSonicStreamingService()
 
@@ -67,6 +80,11 @@ def _check_aws_services() -> dict[str, bool]:
 @app.get("/health")
 def health() -> dict[str, object]:
     return {"status": "ok", "services": _check_aws_services()}
+
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(request: Request, rest_of_path: str) -> Response:
+    return Response(status_code=200)
 
 
 @app.post("/applications", response_model=CreateApplicationResponse)
