@@ -45,11 +45,26 @@ export default function ApplicationDetailPage() {
     return <p className="text-red-600">{error}</p>;
   }
 
+  const statusDetail: Record<string, string> = {
+    collecting_information: "Collecting user information",
+    processing_documents: "Processing documents",
+    automating_submission: "Submitting application",
+  };
+  const statusText = statusDetail[String(application?.status || "")] || "Agents orchestrating workflow";
+
   return (
     <div className="space-y-6">
       <div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h1 className="text-2xl font-bold text-slate-900">Application {applicationId}</h1>
+          <div className="mb-4 mt-3 flex items-center gap-3 rounded-md bg-slate-900 px-4 py-2 text-white">
+            <span className="relative flex h-3 w-3">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-green-500" />
+            </span>
+            <span className="font-medium">AI System Active</span>
+            <span className="text-sm text-gray-300">{statusText}</span>
+          </div>
           <p className="mt-2 text-sm text-slate-600">Status: {String(application?.status || "loading")}</p>
           {String(application?.status || "").toLowerCase() === "needs_user_confirmation" ? (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
