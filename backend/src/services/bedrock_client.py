@@ -14,6 +14,30 @@ class BedrockClient:
     def __init__(self) -> None:
         self.runtime = boto3.client("bedrock-runtime", region_name=settings.aws_region)
 
+    def _invoke_converse(
+        self,
+        *,
+        model_id: str,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> dict[str, Any]:
+        return self.runtime.converse(
+            modelId=model_id,
+            system=[{"text": system_prompt}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": [{"text": user_prompt}],
+                }
+            ],
+            inferenceConfig={
+                "temperature": temperature,
+                "maxTokens": max_tokens,
+            },
+        )
+
     def converse_json(
         self,
         *,
@@ -24,24 +48,37 @@ class BedrockClient:
         max_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Call Bedrock model and return parsed JSON when possible."""
-        try:
-            response = self.runtime.converse(
-                modelId=model_id,
-                system=[{"text": system_prompt}],
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [{"text": user_prompt}],
-                    }
-                ],
-                inferenceConfig={
-                    "temperature": temperature,
-                    "maxTokens": max_tokens,
-                },
-            )
-        except (ClientError, BotoCoreError) as exc:
-            logger.exception("Bedrock converse call failed")
-            return {"error": str(exc), "raw_text": ""}
+        candidates = [model_id]
+        if ":" not in model_id:
+            candidates.append(f"{model_id}:0")
+
+        response: dict[str, Any] | None = None
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                response = self._invoke_converse(
+                    model_id=candidate,
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                break
+            except (ClientError, BotoCoreError) as exc:
+                last_error = exc
+                if isinstance(exc, ClientError):
+                    error = exc.response.get("Error", {})
+                    message = str(error.get("Message", "")).lower()
+                    code = str(error.get("Code", ""))
+                    should_retry = code == "ValidationException" and "model identifier" in message
+                    if should_retry and candidate != candidates[-1]:
+                        logger.warning("Retrying Bedrock converse with alternate model id: %s", candidates[-1])
+                        continue
+                logger.exception("Bedrock converse call failed")
+                break
+
+        if response is None:
+            return {"error": str(last_error) if last_error else "unknown_error", "raw_text": ""}
 
         output = response.get("output", {})
         message = output.get("message", {})

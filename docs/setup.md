@@ -22,12 +22,18 @@ Ensure `APP_BASE_URL` points to the frontend host (default `http://localhost:300
 ## 3. Run Backend Locally
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
 playwright install chromium
-PYTHONPATH=. python -m backend.src.main
+./scripts/run_local.sh
 ```
+
+`run_local.sh` automatically:
+- activates `.venv`
+- loads `.env`
+- bootstraps DynamoDB + S3 via `backend/scripts/bootstrap_aws_resources.py`
+- starts Uvicorn on `http://localhost:8000`
 
 ## 4. Run Frontend Locally
 

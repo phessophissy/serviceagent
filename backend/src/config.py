@@ -7,17 +7,18 @@ class Settings:
     aws_region: str = os.getenv("AWS_REGION", "us-east-1")
     users_table: str = os.getenv("USERS_TABLE", "ServiceAgentUsers")
     applications_table: str = os.getenv("APPLICATIONS_TABLE", "ServiceAgentApplications")
-    extracted_docs_table: str = os.getenv("EXTRACTED_DOCS_TABLE", "ServiceAgentExtractedDocuments")
+    extracted_docs_table: str = os.getenv("EXTRACTED_DOCS_TABLE", "ServiceAgentExtractedDocs")
     agent_logs_table: str = os.getenv("AGENT_LOGS_TABLE", "ServiceAgentAgentLogs")
     planner_state_table: str = os.getenv("PLANNER_STATE_TABLE", "ServiceAgentPlannerState")
     automation_timeline_table: str = os.getenv("AUTOMATION_TIMELINE_TABLE", "ServiceAgentAutomationTimeline")
-    documents_bucket: str = os.getenv("DOCUMENTS_BUCKET", "")
-    artifacts_bucket: str = os.getenv("ARTIFACTS_BUCKET", "service-agent-demo-artifacts")
+    s3_bucket: str = os.getenv("S3_BUCKET", "serviceagent-storage")
+    documents_bucket: str = os.getenv("DOCUMENTS_BUCKET", os.getenv("S3_BUCKET", "serviceagent-storage"))
+    artifacts_bucket: str = os.getenv("ARTIFACTS_BUCKET", os.getenv("S3_BUCKET", "serviceagent-storage"))
 
     # Bedrock model identifiers are configurable because accounts/regions vary.
     nova_sonic_model_id: str = os.getenv("NOVA_SONIC_MODEL_ID", "amazon.nova-sonic-v1:0")
     nova_multimodal_model_id: str = os.getenv("NOVA_MULTIMODAL_MODEL_ID", "amazon.nova-pro-v1:0")
-    nova_lite_model_id: str = os.getenv("NOVA_LITE_MODEL_ID", "amazon.nova-lite-v1:0")
+    nova_lite_model_id: str = os.getenv("NOVA_LITE_MODEL_ID", "amazon.nova-lite-v1")
     nova_act_model_id: str = os.getenv("NOVA_ACT_MODEL_ID", "amazon.nova-act-v1:0")
 
     app_base_url: str = os.getenv("APP_BASE_URL", "http://localhost:3000")

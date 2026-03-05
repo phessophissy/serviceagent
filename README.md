@@ -77,12 +77,12 @@ Service Agent includes a preconfigured demo scenario:
 
 DynamoDB tables:
 
-- `Users`
-- `Applications`
-- `ExtractedDocuments`
-- `AgentLogs`
-- `PlannerState`
-- `AutomationTimeline`
+- `ServiceAgentUsers`
+- `ServiceAgentApplications`
+- `ServiceAgentExtractedDocs`
+- `ServiceAgentAgentLogs` (with GSI `application_id-created_at-index`)
+- `ServiceAgentPlannerState`
+- `ServiceAgentAutomationTimeline`
 
 S3 objects:
 
@@ -102,10 +102,11 @@ S3 objects:
 ```bash
 cd /home/thee1/dev/serviceagent
 cp .env.example .env
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
-PYTHONPATH=. python -m backend.src.main
+playwright install chromium
+./scripts/run_local.sh
 ```
 
 In another terminal:

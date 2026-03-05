@@ -28,16 +28,6 @@ class PlannerAgent(Agent):
         demo_mode: bool = False,
         demo_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        if demo_mode and isinstance(demo_context, dict):
-            return self._demo_plan(
-                user_goal=user_goal,
-                application_type=application_type,
-                profile=profile,
-                documents=documents,
-                previous_tasks=previous_tasks,
-                demo_context=demo_context,
-            )
-
         system_prompt = (
             "You are the central planning brain for a multi-agent administrative worker. "
             "Return JSON only with keys: goal, reasoning_summary, next_action, missing_requirements, clarification_questions, tasks. "
@@ -54,6 +44,8 @@ class PlannerAgent(Agent):
             f"Interview JSON: {json.dumps(interview_history[-12:], ensure_ascii=True)}\n"
             f"Previous tasks JSON: {json.dumps(previous_tasks, ensure_ascii=True)}\n"
             f"Previous agent outputs JSON: {json.dumps(previous_agent_outputs, ensure_ascii=True)}\n"
+            f"Demo mode: {json.dumps(demo_mode)}\n"
+            f"Demo context JSON: {json.dumps(demo_context or {}, ensure_ascii=True)}\n"
             "Decide the next best action and produce an updated task list."
         )
 
@@ -74,6 +66,19 @@ class PlannerAgent(Agent):
             previous_tasks=previous_tasks,
             previous_agent_outputs=previous_agent_outputs,
         )
+
+        if demo_mode and isinstance(demo_context, dict):
+            demo_plan = self._demo_plan(
+                user_goal=user_goal,
+                application_type=application_type,
+                profile=profile,
+                documents=documents,
+                previous_tasks=previous_tasks,
+                demo_context=demo_context,
+            )
+            demo_plan["model_raw"] = normalized.get("model_raw", raw_plan)
+            return demo_plan
+
         return normalized
 
     def _demo_plan(

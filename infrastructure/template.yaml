@@ -12,14 +12,15 @@ Globals:
     Environment:
       Variables:
         AWS_REGION: !Ref AWSRegion
-        USERS_TABLE: !Ref UsersTable
-        APPLICATIONS_TABLE: !Ref ApplicationsTable
-        EXTRACTED_DOCS_TABLE: !Ref ExtractedDocumentsTable
-        AGENT_LOGS_TABLE: !Ref AgentLogsTable
-        PLANNER_STATE_TABLE: !Ref PlannerStateTable
-        AUTOMATION_TIMELINE_TABLE: !Ref AutomationTimelineTable
-        DOCUMENTS_BUCKET: !Ref DocumentsBucket
-        ARTIFACTS_BUCKET: !Ref ArtifactsBucketName
+        USERS_TABLE: !Ref UsersTableName
+        APPLICATIONS_TABLE: !Ref ApplicationsTableName
+        EXTRACTED_DOCS_TABLE: !Ref ExtractedDocsTableName
+        AGENT_LOGS_TABLE: !Ref AgentLogsTableName
+        PLANNER_STATE_TABLE: !Ref PlannerStateTableName
+        AUTOMATION_TIMELINE_TABLE: !Ref AutomationTimelineTableName
+        S3_BUCKET: !Ref StorageBucketName
+        DOCUMENTS_BUCKET: !Ref StorageBucketName
+        ARTIFACTS_BUCKET: !Ref StorageBucketName
         COGNITO_USER_POOL_ID: !Ref UserPool
         COGNITO_USER_POOL_CLIENT_ID: !Ref UserPoolClient
         NOVA_SONIC_MODEL_ID: !Ref NovaSonicModelId
@@ -33,6 +34,27 @@ Parameters:
   AWSRegion:
     Type: String
     Default: us-east-1
+  UsersTableName:
+    Type: String
+    Default: ServiceAgentUsers
+  ApplicationsTableName:
+    Type: String
+    Default: ServiceAgentApplications
+  ExtractedDocsTableName:
+    Type: String
+    Default: ServiceAgentExtractedDocs
+  AgentLogsTableName:
+    Type: String
+    Default: ServiceAgentAgentLogs
+  PlannerStateTableName:
+    Type: String
+    Default: ServiceAgentPlannerState
+  AutomationTimelineTableName:
+    Type: String
+    Default: ServiceAgentAutomationTimeline
+  StorageBucketName:
+    Type: String
+    Default: serviceagent-storage
   NovaSonicModelId:
     Type: String
     Default: amazon.nova-sonic-v1:0
@@ -41,16 +63,13 @@ Parameters:
     Default: amazon.nova-pro-v1:0
   NovaLiteModelId:
     Type: String
-    Default: amazon.nova-lite-v1:0
+    Default: amazon.nova-lite-v1
   NovaActModelId:
     Type: String
     Default: amazon.nova-act-v1:0
   NotificationSenderEmail:
     Type: String
     Default: ""
-  ArtifactsBucketName:
-    Type: String
-    Default: service-agent-demo-artifacts
   DemoMode:
     Type: String
     Default: "false"
@@ -79,27 +98,26 @@ Resources:
       Policies:
         - AWSLambdaBasicExecutionRole
         - DynamoDBCrudPolicy:
-            TableName: !Ref UsersTable
+            TableName: !Ref UsersTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref ApplicationsTable
+            TableName: !Ref ApplicationsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref ExtractedDocumentsTable
+            TableName: !Ref ExtractedDocsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref AgentLogsTable
+            TableName: !Ref AgentLogsTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref PlannerStateTable
+            TableName: !Ref PlannerStateTableName
         - DynamoDBCrudPolicy:
-            TableName: !Ref AutomationTimelineTable
+            TableName: !Ref AutomationTimelineTableName
         - S3CrudPolicy:
-            BucketName: !Ref DocumentsBucket
-        - S3CrudPolicy:
-            BucketName: !Ref ArtifactsBucketName
+            BucketName: !Ref StorageBucketName
         - Statement:
             - Effect: Allow
               Action:
                 - bedrock:InvokeModel
                 - bedrock:Converse
                 - bedrock:ConverseStream
+                - bedrock:ListFoundationModels
               Resource: "*"
             - Effect: Allow
               Action:
@@ -114,9 +132,10 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
-  DocumentsBucket:
+  StorageBucket:
     Type: AWS::S3::Bucket
     Properties:
+      BucketName: !Ref StorageBucketName
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -130,6 +149,7 @@ Resources:
   UsersTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: !Ref UsersTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: user_id
@@ -141,6 +161,7 @@ Resources:
   ApplicationsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: !Ref ApplicationsTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: application_id
@@ -152,6 +173,7 @@ Resources:
   ExtractedDocumentsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: !Ref ExtractedDocsTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: document_id
@@ -163,6 +185,7 @@ Resources:
   AgentLogsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: !Ref AgentLogsTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: log_id
@@ -187,6 +210,7 @@ Resources:
   PlannerStateTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: !Ref PlannerStateTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: application_id
@@ -198,6 +222,7 @@ Resources:
   AutomationTimelineTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: !Ref AutomationTimelineTableName
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: application_id
@@ -246,4 +271,4 @@ Outputs:
   UserPoolClientId:
     Value: !Ref UserPoolClient
   DocumentsBucketName:
-    Value: !Ref DocumentsBucket
+    Value: !Ref StorageBucket

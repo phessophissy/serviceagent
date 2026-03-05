@@ -3,9 +3,12 @@ import base64
 import json
 from typing import Annotated
 
+import boto3
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from mangum import Mangum
+from botocore.exceptions import BotoCoreError, ClientError
 
+from backend.src.config import settings
 from backend.src.models import (
     ApplicationTimelineResponse,
     ApplicationRecord,
@@ -34,9 +37,36 @@ def get_user_sub(x_user_sub: Annotated[str | None, Header()] = None) -> str:
     return x_user_sub or "demo-user"
 
 
+def _check_aws_services() -> dict[str, bool]:
+    services = {"dynamodb": False, "s3": False, "bedrock": False}
+
+    try:
+        dynamodb = boto3.client("dynamodb", region_name=settings.aws_region)
+        dynamodb.list_tables(Limit=1)
+        services["dynamodb"] = True
+    except (ClientError, BotoCoreError):
+        services["dynamodb"] = False
+
+    try:
+        s3 = boto3.client("s3", region_name=settings.aws_region)
+        s3.list_buckets()
+        services["s3"] = True
+    except (ClientError, BotoCoreError):
+        services["s3"] = False
+
+    try:
+        bedrock = boto3.client("bedrock", region_name=settings.aws_region)
+        bedrock.list_foundation_models()
+        services["bedrock"] = True
+    except (ClientError, BotoCoreError):
+        services["bedrock"] = False
+
+    return services
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {"status": "ok", "services": _check_aws_services()}
 
 
 @app.post("/applications", response_model=CreateApplicationResponse)

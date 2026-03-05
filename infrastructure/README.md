@@ -6,8 +6,8 @@ Resources provisioned:
 
 - API Gateway HTTP API
 - Lambda API backend
-- DynamoDB tables: Users, Applications, ExtractedDocuments, AgentLogs
-- S3 bucket for uploaded documents and extracted JSON
+- DynamoDB tables: `ServiceAgentUsers`, `ServiceAgentApplications`, `ServiceAgentExtractedDocs`, `ServiceAgentAgentLogs`, `ServiceAgentPlannerState`, `ServiceAgentAutomationTimeline`
+- S3 bucket (`serviceagent-storage` by default) for documents + automation artifacts
 - Cognito User Pool + App Client
 
 ## Deploy
